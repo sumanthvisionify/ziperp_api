@@ -1,0 +1,19 @@
+{
+  "name": "zipcushions-erp-api",
+  "version": "1.0.0",
+  "description": "restapi for erp",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.js",
+    "dev": "node app.js"
+  },
+  "author": "visionify",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "@supabase/supabase-js": "^2.11.0"
+  }
+}
