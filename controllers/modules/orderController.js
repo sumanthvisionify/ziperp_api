@@ -262,4 +262,28 @@ exports.bulkUpdateOrderStatus = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+exports.createDummyOrders = async (req, res, next) => {
+  try {
+    const { numOrders = 5 } = req.body;
+    const currentUserId = req.user?.id;
+    
+    if (numOrders < 1 || numOrders > 50) {
+      return res.status(400).json({
+        success: false,
+        error: 'Number of orders must be between 1 and 50'
+      });
+    }
+    
+    const result = await orderService.createDummyOrders(numOrders, currentUserId);
+    
+    res.status(201).json({
+      success: true,
+      data: result,
+      message: `Successfully created ${result.orders.length} dummy orders with ${result.orderDetails.length} order details and ${result.orderDetailIngredients.length} ingredients`
+    });
+  } catch (err) {
+    next(err);
+  }
 }; 

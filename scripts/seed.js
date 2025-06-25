@@ -367,7 +367,7 @@ async function seedItems(factories) {
     throw error;
   }
   
-  console.log('✅ Items seeded successfully');
+  console.log('Items seeded successfully');
   return data;
 }
 
@@ -395,6 +395,125 @@ async function seedStock(items) {
   return data;
 }
 
+async function seedOrders(customers, products, items, factories, company) {
+  console.log('🌱 Seeding orders...');
+  
+  const orderStatuses = ['pending', 'confirmed', 'in_progress', 'completed', 'shipped'];
+  const orderDetailStatuses = ['pending', 'confirmed', 'in_progress', 'completed'];
+  
+  // Create 15 sample orders
+  const ordersToCreate = [];
+  for (let i = 0; i < 15; i++) {
+    const randomCustomer = customers[Math.floor(Math.random() * customers.length)];
+    const randomFactory = factories[Math.floor(Math.random() * factories.length)];
+    const orderDate = new Date();
+    orderDate.setDate(orderDate.getDate() - Math.floor(Math.random() * 90)); // Orders from last 90 days
+    
+    ordersToCreate.push({
+      customer_id: randomCustomer.id,
+      order_date: orderDate.toISOString().split('T')[0],
+      status: orderStatuses[Math.floor(Math.random() * orderStatuses.length)],
+      company_id: company.id,
+      factory_id: randomFactory.id
+    });
+  }
+  
+  const { data: orders, error: orderError } = await supabase
+    .from('orders')
+    .insert(ordersToCreate)
+    .select();
+  
+  if (orderError) {
+    console.error('Error seeding orders:', orderError);
+    throw orderError;
+  }
+  
+  console.log('✅ Orders seeded successfully');
+  
+  // Create order details for each order
+  const orderDetailsToCreate = [];
+  const orderDetailIngredientsToCreate = [];
+  
+  for (const order of orders) {
+    // Each order has 1-3 products
+    const numProducts = Math.floor(Math.random() * 3) + 1;
+    const selectedProducts = [];
+    
+    for (let i = 0; i < numProducts; i++) {
+      let product;
+      do {
+        product = products[Math.floor(Math.random() * products.length)];
+      } while (selectedProducts.some(p => p.id === product.id));
+      selectedProducts.push(product);
+      
+      const orderDetail = {
+        order_id: order.id,
+        product_id: product.id,
+        status: orderDetailStatuses[Math.floor(Math.random() * orderDetailStatuses.length)],
+        factory_id: order.factory_id,
+        company_id: order.company_id
+      };
+      
+      orderDetailsToCreate.push(orderDetail);
+    }
+  }
+  
+  const { data: orderDetails, error: orderDetailError } = await supabase
+    .from('order_details')
+    .insert(orderDetailsToCreate)
+    .select();
+  
+  if (orderDetailError) {
+    console.error('Error seeding order details:', orderDetailError);
+    throw orderDetailError;
+  }
+  
+  console.log('✅ Order details seeded successfully');
+  
+  // Create order detail ingredients
+  for (const orderDetail of orderDetails) {
+    const order = orders.find(o => o.id === orderDetail.order_id);
+    
+    // Each order detail has 2-4 ingredients
+    const numIngredients = Math.floor(Math.random() * 3) + 2;
+    const selectedItems = [];
+    
+    for (let i = 0; i < numIngredients; i++) {
+      let item;
+      do {
+        item = items[Math.floor(Math.random() * items.length)];
+      } while (selectedItems.some(it => it.id === item.id));
+      selectedItems.push(item);
+      
+      const ingredient = {
+        order_details_id: orderDetail.id,
+        order_id: order.id,
+        item_id: item.id,
+        quantity: (Math.random() * 10 + 1).toFixed(2), // Random quantity between 1-11
+        status: orderDetailStatuses[Math.floor(Math.random() * orderDetailStatuses.length)],
+        factory_id: order.factory_id,
+        company_id: order.company_id
+      };
+      
+      orderDetailIngredientsToCreate.push(ingredient);
+    }
+  }
+  
+  const { data: orderDetailIngredients, error: ingredientError } = await supabase
+    .from('order_detail_ingredients')
+    .insert(orderDetailIngredientsToCreate)
+    .select();
+  
+  if (ingredientError) {
+    console.error('Error seeding order detail ingredients:', ingredientError);
+    throw ingredientError;
+  }
+  
+  console.log('✅ Order detail ingredients seeded successfully');
+  
+  return { orders, orderDetails, orderDetailIngredients };
+}
+
 async function main() {
   try {
     console.log('🚀 Starting database seeding...');
@@ -410,6 +529,7 @@ async function main() {
     const products = await seedProducts();
     const items = await seedItems(factories);
     const stock = await seedStock(items);
+    const { orders, orderDetails, orderDetailIngredients } = await seedOrders(customers, products, items, factories, company);
     
     console.log('🎉 Database seeding completed successfully!');
     
@@ -422,6 +542,9 @@ async function main() {
     console.log(`- ${products.length} products`);
     console.log(`- ${items.length} items`);
     console.log(`- ${stock.length} stock entries`);
+    console.log(`- ${orders.length} orders`);
+    console.log(`- ${orderDetails.length} order details`);
+    console.log(`- ${orderDetailIngredients.length} order detail ingredients`);
     
     console.log('\n🔐 Test User Credentials:');
     console.log('Super Admin: superadmin@zipcushions.com / password123');
@@ -447,5 +570,6 @@ module.exports = {
   seedCustomers,
   seedProducts,
   seedItems,
-  seedStock
+  seedStock,
+  seedOrders
 }; 

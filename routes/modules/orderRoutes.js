@@ -12,6 +12,9 @@ router.delete('/:id', orderController.deleteOrder);
 // Order status management
 router.put('/:id/status', orderController.updateOrderStatus);
 
+// Dummy data creation
+router.post('/dummy/create', orderController.createDummyOrders);
+
 // Order filtering and grouping routes
 router.get('/customer/:customerId', orderController.getOrdersByCustomer);
 router.get('/status/:status', orderController.getOrdersByStatus);
