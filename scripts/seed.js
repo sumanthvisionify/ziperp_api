@@ -15,7 +15,7 @@ async function seedRoles() {
   
   const { data, error } = await supabase
     .from('roles')
-    .insert(roles)
+    .upsert(roles, { onConflict: 'role_name' })
     .select();
   
   if (error) {

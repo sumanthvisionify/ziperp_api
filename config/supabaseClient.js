@@ -15,6 +15,23 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('Missing Supabase environment variables. Please check your .env file.');
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Create Supabase client with service role
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false
+  }
+});
+
+// Test connection
+supabase.from('orders').select('count').single()
+  .then(() => console.log('✅ Connected to Supabase with service role'))
+  .catch(err => {
+    console.error('❌ Connection error:', err.message);
+    if (err.message.includes('permission denied')) {
+      console.error('Service role key not working. Please check your SUPABASE_SERVICE_KEY');
+      console.error('Make sure you are using the service_role key, not the anon key!');
+      console.error('The service role key should start with "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."');
+    }
+  });
 
 module.exports = supabase;

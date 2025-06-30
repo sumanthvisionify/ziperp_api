@@ -1,6 +1,10 @@
--- ERP System Database Schema Migration
--- Based on ER Diagram
--- Creation Date: 2024
+-- Drop everything and recreate the schema
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;
+
+-- Reset default privileges
+GRANT ALL ON SCHEMA public TO postgres;
+GRANT ALL ON SCHEMA public TO public;
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -8,6 +12,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create ENUM types
 CREATE TYPE item_type_enum AS ENUM ('product', 'item');
 
+-- Create all tables in order of dependencies
 -- 1. Company table
 CREATE TABLE companies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -97,7 +102,7 @@ CREATE TABLE products (
     is_deleted BOOLEAN DEFAULT false
 );
 
--- 9. Item table (raw materials/ingredients)
+-- 9. Item table
 CREATE TABLE items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
@@ -171,11 +176,11 @@ CREATE TABLE activity_log (
     module_name VARCHAR(100)
 );
 
--- Add foreign key constraints that were missing
+-- Add foreign key constraints
 ALTER TABLE companies ADD CONSTRAINT fk_companies_factory FOREIGN KEY (factory_id) REFERENCES factories(id) ON DELETE SET NULL;
 ALTER TABLE factories ADD CONSTRAINT fk_factories_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL;
 
--- Create indexes for better performance
+-- Create indexes
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role_id ON users(role_id);
 CREATE INDEX idx_users_factory_id ON users(factory_id);
@@ -201,7 +206,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Add updated_at triggers to relevant tables
+-- Add updated_at triggers
 CREATE TRIGGER update_companies_updated_at BEFORE UPDATE ON companies FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_factories_updated_at BEFORE UPDATE ON factories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_roles_updated_at BEFORE UPDATE ON roles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
