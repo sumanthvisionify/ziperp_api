@@ -286,4 +286,221 @@ exports.createDummyOrders = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+exports.createSimplifiedOrder = async (req, res, next) => {
+  try {
+    const { 
+      created_at,
+      order_date,
+      status,
+      customer_details,
+      customers,  // alternative field name
+      factory_id,
+      company_id,
+      order_details 
+    } = req.body;
+
+    // Handle customer details from either field name
+    const customerData = customer_details || customers;
+
+    // Validate required fields with detailed messages
+    const errors = [];
+
+    if (!created_at && !order_date) {
+      errors.push('Either created_at or order_date is required');
+    }
+
+    if (!customerData) {
+      errors.push('Customer details are required (use either customer_details or customers field)');
+    } else if (!customerData.email && !customerData.customers_email) {
+      errors.push('Customer email is required (use either email or customers_email field)');
+    }
+
+    if (!order_details || !Array.isArray(order_details)) {
+      errors.push('order_details must be an array');
+    } else {
+      // Validate each order detail
+      order_details.forEach((detail, index) => {
+        if (!detail.product_id) {
+          errors.push(`product_id is required for order detail at index ${index}`);
+        }
+      });
+    }
+
+    // If there are validation errors, return them all at once
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        errors: errors
+      });
+    }
+
+    // Transform the data to match our schema
+    const transformedOrder = {
+      order_date: order_date || new Date(created_at).toISOString().split('T')[0],
+      status: status || 'pending',
+      customer_details: {
+        email: customerData.email || customerData.customers_email,
+        name: customerData.name,
+        status: customerData.status || 'active'
+      },
+      factory_id: factory_id || null,
+      company_id: company_id || null,
+      order_details: order_details.map(detail => ({
+        ...detail,
+        status: detail.status || 'pending'
+      }))
+    };
+
+    const currentUserId = req.user?.id;
+    const newOrder = await orderService.createOrder(transformedOrder, currentUserId);
+
+    res.status(201).json({
+      success: true,
+      data: newOrder,
+      message: 'Order created successfully'
+    });
+  } catch (err) {
+    console.error('Error creating simplified order:', err);
+    if (err.message === 'Email already exists') {
+      res.status(409).json({ 
+        success: false, 
+        error: err.message 
+      });
+    } else {
+      next(err);
+    }
+  }
+};
+
+/**
+ * Creates an order from Shopify order data
+ * Expected input format:
+ * {
+ *   "id": 820982911946154508,
+ *   "email": "jon@doe.ca",
+ *   "created_at": "2025-07-03T10:00:00-04:00",
+ *   "updated_at": "2025-07-03T10:00:00-04:00",
+ *   "order_number": 1001,
+ *   "total_price": "199.99",
+ *   "currency": "USD",
+ *   "financial_status": "paid",
+ *   "fulfillment_status": "unfulfilled",
+ *   "customer": {
+ *     "id": 207119551,
+ *     "first_name": "Jon",
+ *     "last_name": "Doe",
+ *     "email": "jon@doe.ca"
+ *   },
+ *   "line_items": [
+ *     {
+ *       "id": 866550311766439020,
+ *       "variant_id": 808950810,
+ *       "title": "Custom Cushion",
+ *       "quantity": 1,
+ *       "price": "199.99",
+ *       "sku": "CUSH-001",
+ *       "vendor": "ZIPCushions"
+ *     }
+ *   ],
+ *   "shipping_address": {
+ *     "first_name": "Jon",
+ *     "last_name": "Doe",
+ *     "address1": "123 Elm St",
+ *     "city": "Ottawa",
+ *     "province": "Ontario",
+ *     "country": "Canada",
+ *     "zip": "K2P1L4"
+ *   },
+ *   "billing_address": {
+ *     "first_name": "Jon",
+ *     "last_name": "Doe",
+ *     "address1": "123 Elm St",
+ *     "city": "Ottawa",
+ *     "province": "Ontario",
+ *     "country": "Canada",
+ *     "zip": "K2P1L4"
+ *   },
+ *   "note": "Please deliver between 3-5 PM.",
+ *   "tags": "custom,urgent",
+ *   "source_name": "web"
+ * }
+ * 
+ * Fields that will be ignored:
+ * - id (Shopify's order ID)
+ * - currency
+ * - financial_status
+ * - shipping_address
+ * - billing_address
+ * - note
+ * - tags
+ * - source_name
+ * - customer.id (Shopify's customer ID)
+ * - line_items[].id (Shopify's line item ID)
+ * - line_items[].variant_id
+ * - line_items[].sku
+ * - line_items[].vendor
+ */
+exports.createShopifyOrder = async (req, res, next) => {
+  try {
+    const shopifyOrder = req.body;
+
+    // Basic validation
+    if (!shopifyOrder.created_at || !shopifyOrder.customer || !shopifyOrder.line_items || !shopifyOrder.order_number) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: created_at, customer, line_items, or order_number'
+      });
+    }
+
+    // Transform customer data
+    const customerData = {
+      name: `${shopifyOrder.customer.first_name} ${shopifyOrder.customer.last_name}`.trim(),
+      email: shopifyOrder.customer.email,
+      status: 'active'
+    };
+
+    // Map fulfillment status to our status
+    const statusMap = {
+      'unfulfilled': 'pending',
+      'fulfilled': 'completed',
+      'partially_fulfilled': 'in_progress',
+      'cancelled': 'cancelled'
+    };
+
+    // Transform order data
+    const transformedOrder = {
+      order_date: new Date(shopifyOrder.created_at).toISOString().split('T')[0],
+      status: statusMap[shopifyOrder.fulfillment_status] || 'pending',
+      total_price: parseFloat(shopifyOrder.total_price) || 0,
+      order_number: parseInt(shopifyOrder.order_number),
+      customer_details: customerData,
+      order_details: shopifyOrder.line_items.map(item => ({
+        product_id: null,  // Will be set by service layer
+        status: 'pending',
+        quantity: item.quantity,
+        title: item.title  // Temporary field to help find matching product
+      }))
+    };
+
+    const currentUserId = req.user?.id;
+    const newOrder = await orderService.createShopifyOrder(transformedOrder, currentUserId);
+
+    res.status(201).json({
+      success: true,
+      data: newOrder,
+      message: 'Shopify order created successfully'
+    });
+  } catch (err) {
+    console.error('Error creating Shopify order:', err);
+    if (err.code === '23505') {  // PostgreSQL unique violation error code
+      res.status(409).json({
+        success: false,
+        error: 'Order number already exists'
+      });
+    } else {
+      next(err);
+    }
+  }
 }; 

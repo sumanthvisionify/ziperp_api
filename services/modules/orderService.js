@@ -14,6 +14,43 @@ async function logActivity(userId, action, orderId = null, moduleName = 'Orders'
   }
 }
 
+// Helper function to get or create customer
+async function getOrCreateCustomer(customerData) {
+  try {
+    // First try to find the customer by email
+    const email = customerData.email || customerData.customers_email;
+    const { data: existingCustomer, error: lookupError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('email', email)
+      .eq('is_deleted', false)
+      .single();
+
+    if (lookupError && lookupError.code !== 'PGRST116') throw lookupError;
+
+    if (existingCustomer) {
+      return existingCustomer;
+    }
+
+    // If customer doesn't exist, create a new one
+    const { data: newCustomer, error: createError } = await supabase
+      .from('customers')
+      .insert([{
+        name: customerData.name,
+        email: email,
+        status: customerData.status || 'active',
+        is_deleted: false
+      }])
+      .select()
+      .single();
+
+    if (createError) throw createError;
+    return newCustomer;
+  } catch (error) {
+    throw error;
+  }
+}
+
 exports.getAllOrders = async (filterParams = {}) => {
   let query = supabase
     .from('orders')
@@ -84,12 +121,22 @@ exports.getOrderById = async (id) => {
 
 exports.createOrder = async (orderData, createdBy = null) => {
   try {
-    const { order_details, ...orderMain } = orderData;
+    const { order_details, customer_details, customers, ...orderMain } = orderData;
+    
+    // Handle customer creation/lookup
+    const customerData = customer_details || customers;
+    if (customerData) {
+      const customer = await getOrCreateCustomer(customerData);
+      orderMain.customer_id = customer.id;
+    }
     
     // Create the main order
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .insert([orderMain])
+      .insert([{
+        ...orderMain,
+        is_deleted: false
+      }])
       .select()
       .single();
       
@@ -99,7 +146,8 @@ exports.createOrder = async (orderData, createdBy = null) => {
     if (order_details && order_details.length > 0) {
       const orderDetailsWithOrderId = order_details.map(detail => ({
         ...detail,
-        order_id: order.id
+        order_id: order.id,
+        is_deleted: false
       }));
       
       const { data: createdDetails, error: detailsError } = await supabase
@@ -119,7 +167,8 @@ exports.createOrder = async (orderData, createdBy = null) => {
           const ingredientsWithIds = detail.order_detail_ingredients.map(ingredient => ({
             ...ingredient,
             order_id: order.id,
-            order_details_id: correspondingDetail.id
+            order_details_id: correspondingDetail.id,
+            is_deleted: false
           }));
           
           const { error: ingredientsError } = await supabase
@@ -546,6 +595,108 @@ exports.createDummyOrders = async (numOrders = 5, createdBy = null) => {
     return { orders, orderDetails, orderDetailIngredients };
     
   } catch (error) {
+    throw error;
+  }
+};
+
+exports.createShopifyOrder = async (orderData, createdBy = null) => {
+  try {
+    const { order_details, customer_details, order_number, ...orderMain } = orderData;
+    
+    // First, check if order_number already exists
+    const { data: existingOrder, error: checkError } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('order_number', order_number)
+      .single();
+
+    if (checkError && checkError.code !== 'PGRST116') throw checkError;
+    if (existingOrder) {
+      const error = new Error('Order number already exists');
+      error.code = '23505';  // PostgreSQL unique violation code
+      throw error;
+    }
+    
+    // Get or create the customer
+    const customer = await getOrCreateCustomer(customer_details);
+    
+    // Find or create products based on titles
+    const processedOrderDetails = await Promise.all(order_details.map(async (detail) => {
+      // Try to find product by name
+      const { data: existingProduct, error: lookupError } = await supabase
+        .from('products')
+        .select('id, name')
+        .ilike('name', detail.title)
+        .eq('is_deleted', false)
+        .single();
+
+      if (lookupError && lookupError.code !== 'PGRST116') throw lookupError;
+
+      let productId;
+      if (existingProduct) {
+        productId = existingProduct.id;
+      } else {
+        // Create new product if not found
+        const { data: newProduct, error: createError } = await supabase
+          .from('products')
+          .insert([{
+            name: detail.title,
+            description: `Product imported from Shopify order`,
+            is_deleted: false
+          }])
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        productId = newProduct.id;
+      }
+
+      // Return order detail with product_id
+      return {
+        product_id: productId,
+        status: detail.status,
+        is_deleted: false
+      };
+    }));
+
+    // Create the main order
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert([{
+        ...orderMain,
+        order_number,
+        customer_id: customer.id,
+        is_deleted: false
+      }])
+      .select()
+      .single();
+      
+    if (orderError) throw orderError;
+    
+    // Create order details
+    if (processedOrderDetails.length > 0) {
+      const orderDetailsWithOrderId = processedOrderDetails.map(detail => ({
+        ...detail,
+        order_id: order.id
+      }));
+      
+      const { error: detailsError } = await supabase
+        .from('order_details')
+        .insert(orderDetailsWithOrderId);
+        
+      if (detailsError) throw detailsError;
+    }
+    
+    // Log activity
+    if (createdBy) {
+      await logActivity(createdBy, `Created Shopify order #${order_number}`, order.id);
+    }
+    
+    // Return the complete order with all relations
+    return await exports.getOrderById(order.id);
+    
+  } catch (error) {
+    console.error('Error in createShopifyOrder:', error);
     throw error;
   }
 }; 

@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const userRoutes = require('./routes/userRoutes');
 const orderRoutes = require('./routes/modules/orderRoutes');
+const customerRoutes = require('./routes/modules/customerRoutes');
 
 const app = express();
 
@@ -12,6 +13,7 @@ app.use(express.json());
 // API Routes
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/customers', customerRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -27,10 +29,11 @@ app.get('/api', (req, res) => {
   res.json({
     message: 'ZipCushions ERP API',
     version: '1.0.0',
-    modules: ['Users', 'Orders', 'Make', 'Sales', 'Buy', 'Stock', 'Settings'],
+    modules: ['Users', 'Orders', 'Customers', 'Make', 'Sales', 'Buy', 'Stock', 'Settings'],
     endpoints: {
       users: '/api/users',
       orders: '/api/orders',
+      customers: '/api/customers',
       health: '/health'
     }
   });
