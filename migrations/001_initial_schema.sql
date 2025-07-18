@@ -3,14 +3,17 @@ create table public.activity_log (
   module_name text not null,
   record_id text null,
   change_log text null,
-  time_stamp timestamp with time zone not null default now(),
-  performed_by jsonb not null,
+  modified_at timestamp with time zone not null default now(),
+  modified_by jsonb not null,
   constraint activity_log_pkey primary key (id)
 ) TABLESPACE pg_default;
 
 create index IF not exists idx_activity_log_user_id on public.activity_log using btree (module_name) TABLESPACE pg_default;
 
-create index IF not exists idx_activity_log_order_id on public.activity_log using btree (record_id) TABLESPACE pg_default;;
+create index IF not exists idx_activity_log_order_id on public.activity_log using btree (record_id) TABLESPACE pg_default;
+
+create trigger trg_set_record_id BEFORE INSERT on activity_log for EACH row
+execute FUNCTION set_activity_log_record_id ();
 
 create table public.companies (
   id uuid not null default gen_random_uuid (),
@@ -115,6 +118,7 @@ create table public.order_details (
   is_deleted boolean null default false,
   factory_id uuid null,
   company_id uuid null,
+  product_quantity bigint not null default '1'::bigint,
   constraint order_details_pkey primary key (id),
   constraint order_details_company_id_fkey foreign KEY (company_id) references companies (id) on delete set null,
   constraint order_details_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null,
@@ -125,6 +129,7 @@ create table public.order_details (
 create trigger update_order_details_updated_at BEFORE
 update on order_details for EACH row
 execute FUNCTION update_updated_at_column ();
+
 
 create table public.orders (
   id uuid not null default gen_random_uuid (),
@@ -138,15 +143,17 @@ create table public.orders (
   updated_at timestamp with time zone null default now(),
   total_price numeric null default '1200'::numeric,
   order_number bigint null,
+  expected_date date null,
   constraint orders_pkey primary key (id),
   constraint orders_company_id_fkey foreign KEY (company_id) references companies (id) on delete set null,
   constraint orders_customer_id_fkey foreign KEY (customer_id) references customers (id) on delete set null,
   constraint orders_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null
 ) TABLESPACE pg_default;
 
-create trigger update_orders_updated_at BEFORE
-update on orders for EACH row
-execute FUNCTION update_updated_at_column ();
+create trigger trigger_set_expected_date BEFORE INSERT
+or
+update OF order_date on orders for EACH row
+execute FUNCTION set_expected_date ();
 
 create trigger update_orders_updated_at BEFORE
 update on orders for EACH row
@@ -176,29 +183,14 @@ create table public.products (
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
   is_deleted boolean null default false,
-  constraint products_pkey primary key (id)
+  tax_rate numeric not null default 15.00,
+  constraint products_pkey primary key (id),
+  constraint products_tax_rate_check check ((tax_rate >= (0)::numeric))
 ) TABLESPACE pg_default;
 
 create trigger update_products_updated_at BEFORE
 update on products for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.products (
-  id uuid not null default gen_random_uuid (),
-  name character varying(255) not null,
-  description text null,
-  base_unit character varying(50) null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  constraint products_pkey primary key (id)
-) TABLESPACE pg_default;
-
-create trigger update_products_updated_at BEFORE
-update on products for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.purchase_orders (
+execute FUNCTION update_updated_at_column ();create table public.purchase_orders (
   id text not null default generate_purchase_order_id (),
   supplier_id uuid null,
   created_at timestamp with time zone null default now(),
@@ -206,8 +198,12 @@ create table public.purchase_orders (
   status text null default 'pending'::text,
   order_cost numeric(12, 2) null default 0,
   invoice_number text null,
+  item_id uuid null,
+  quantity bigint null default '0'::bigint,
   constraint purchase_orders_pkey primary key (id),
-  constraint purchase_orders_supplier_id_fkey foreign KEY (supplier_id) references suppliers (id)
+  constraint purchase_orders_item_id_fkey foreign KEY (item_id) references items (id) on update CASCADE on delete CASCADE,
+  constraint purchase_orders_supplier_id_fkey foreign KEY (supplier_id) references suppliers (id),
+  constraint purchase_orders_quantity_check check ((quantity >= 0))
 ) TABLESPACE pg_default;
 
 create table public.role_permissions (
@@ -232,6 +228,21 @@ create trigger update_roles_updated_at BEFORE
 update on roles for EACH row
 execute FUNCTION update_updated_at_column ();
 
+create table public.shipping_details (
+  id uuid not null default gen_random_uuid (),
+  order_id uuid not null default gen_random_uuid (),
+  status text not null default 'not_shipped'::text,
+  shipped_date date null,
+  shipping_address text null,
+  constraint shipping_details_pkey primary key (id),
+  constraint shipping_details_order_id_fkey foreign KEY (order_id) references orders (id) on update CASCADE on delete CASCADE
+) TABLESPACE pg_default;
+
+create index IF not exists idx_shipping_details_order_id on public.shipping_details using btree (order_id) TABLESPACE pg_default;
+
+create index IF not exists idx_shipping_details_status on public.shipping_details using btree (status) TABLESPACE pg_default;
+
+
 create table public.stock (
   id uuid not null default gen_random_uuid (),
   item_id uuid null,
@@ -242,6 +253,7 @@ create table public.stock (
   updated_at timestamp with time zone null default now(),
   product_id uuid null,
   status text null default 'in_stock'::text,
+  expected_quantity numeric(15, 2) null default 0,
   constraint stock_pkey primary key (id),
   constraint stock_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null,
   constraint stock_item_id_fkey foreign KEY (item_id) references items (id) on delete CASCADE,
@@ -269,6 +281,8 @@ create index IF not exists idx_stock_factory_id on public.stock using btree (fac
 create trigger update_stock_updated_at BEFORE
 update on stock for EACH row
 execute FUNCTION update_updated_at_column ();
+
+
 
 create table public.suppliers (
   id uuid not null default gen_random_uuid (),
