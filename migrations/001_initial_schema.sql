@@ -1,20 +1,16 @@
 create table public.activity_log (
   id uuid not null default gen_random_uuid (),
-  user_id uuid null,
-  order_id uuid null,
-  action character varying(255) not null,
-  timestamp timestamp with time zone null default now(),
-  module_name character varying(100) null,
-  constraint activity_log_pkey primary key (id),
-  constraint activity_log_order_id_fkey foreign KEY (order_id) references orders (id) on delete set null,
-  constraint activity_log_user_id_fkey foreign KEY (user_id) references users (id) on delete set null
+  module_name text not null,
+  record_id text null,
+  change_log text null,
+  time_stamp timestamp with time zone not null default now(),
+  performed_by jsonb not null,
+  constraint activity_log_pkey primary key (id)
 ) TABLESPACE pg_default;
 
-create index IF not exists idx_activity_log_user_id on public.activity_log using btree (user_id) TABLESPACE pg_default;
+create index IF not exists idx_activity_log_user_id on public.activity_log using btree (module_name) TABLESPACE pg_default;
 
-create index IF not exists idx_activity_log_order_id on public.activity_log using btree (order_id) TABLESPACE pg_default;
-
-create index IF not exists idx_activity_log_timestamp on public.activity_log using btree ("timestamp") TABLESPACE pg_default;
+create index IF not exists idx_activity_log_order_id on public.activity_log using btree (record_id) TABLESPACE pg_default;;
 
 create table public.companies (
   id uuid not null default gen_random_uuid (),
@@ -141,11 +137,16 @@ create table public.orders (
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
   total_price numeric null default '1200'::numeric,
+  order_number bigint null,
   constraint orders_pkey primary key (id),
   constraint orders_company_id_fkey foreign KEY (company_id) references companies (id) on delete set null,
   constraint orders_customer_id_fkey foreign KEY (customer_id) references customers (id) on delete set null,
   constraint orders_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null
 ) TABLESPACE pg_default;
+
+create trigger update_orders_updated_at BEFORE
+update on orders for EACH row
+execute FUNCTION update_updated_at_column ();
 
 create trigger update_orders_updated_at BEFORE
 update on orders for EACH row

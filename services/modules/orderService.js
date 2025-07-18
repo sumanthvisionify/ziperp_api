@@ -3,11 +3,24 @@ const supabase = require('../../config/supabaseClient');
 // Helper function to log activity
 async function logActivity(userId, action, orderId = null, moduleName = 'Orders') {
   try {
+    // Get user information
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .eq('id', userId)
+      .single();
+      
+    if (userError) throw userError;
+
     await supabase.from('activity_log').insert([{
-      user_id: userId,
-      order_id: orderId,
-      action,
-      module_name: moduleName
+      module_name: moduleName,
+      record_id: orderId,
+      change_log: action,
+      performed_by: {
+        user_id: user.id,
+        user_name: user.name,
+        email: user.email
+      }
     }]);
   } catch (error) {
     console.error('Error logging activity:', error);
@@ -59,6 +72,7 @@ exports.getAllOrders = async (filterParams = {}) => {
       customer:customers(*),
       company:companies(*),
       factory:factories(*),
+      shipping_details(*),
       order_details(
         *,
         product:products(*),
@@ -102,6 +116,7 @@ exports.getOrderById = async (id) => {
       customer:customers(*),
       company:companies(*),
       factory:factories(*),
+      shipping_details(*),
       order_details(
         *,
         product:products(*),
@@ -341,6 +356,7 @@ exports.getOrdersByCustomer = async (customerId) => {
     .select(`
       *,
       customer:customers(*),
+      shipping_details(*),
       order_details(
         *,
         product:products(*)
@@ -360,6 +376,7 @@ exports.getOrdersByStatus = async (status) => {
     .select(`
       *,
       customer:customers(*),
+      shipping_details(*),
       order_details(
         *,
         product:products(*)
@@ -380,6 +397,7 @@ exports.getOrdersByFactory = async (factoryId) => {
       *,
       customer:customers(*),
       factory:factories(*),
+      shipping_details(*),
       order_details(
         *,
         product:products(*)
@@ -601,7 +619,7 @@ exports.createDummyOrders = async (numOrders = 5, createdBy = null) => {
 
 exports.createShopifyOrder = async (orderData, createdBy = null) => {
   try {
-    const { order_details, customer_details, order_number, ...orderMain } = orderData;
+    const { order_details, customer_details, order_number, shipping_details, ...orderMain } = orderData;
     
     // First, check if order_number already exists
     const { data: existingOrder, error: checkError } = await supabase
@@ -685,6 +703,19 @@ exports.createShopifyOrder = async (orderData, createdBy = null) => {
         .insert(orderDetailsWithOrderId);
         
       if (detailsError) throw detailsError;
+    }
+    
+    // Create shipping details if provided
+    if (shipping_details) {
+      const { error: shippingError } = await supabase
+        .from('shipping_details')
+        .insert([{
+          order_id: order.id,
+          status: shipping_details.status,
+          shipping_address: shipping_details.shipping_address
+        }]);
+        
+      if (shippingError) throw shippingError;
     }
     
     // Log activity

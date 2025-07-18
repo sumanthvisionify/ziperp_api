@@ -431,7 +431,6 @@ exports.createSimplifiedOrder = async (req, res, next) => {
  * - id (Shopify's order ID)
  * - currency
  * - financial_status
- * - shipping_address
  * - billing_address
  * - note
  * - tags
@@ -441,7 +440,26 @@ exports.createSimplifiedOrder = async (req, res, next) => {
  * - line_items[].variant_id
  * - line_items[].sku
  * - line_items[].vendor
+ * 
+ * Shipping address will be extracted and stored in shipping_details table
  */
+//data modification
+
+// Helper function to format shipping address
+function formatShippingAddress(shippingAddress) {
+  const parts = [
+    shippingAddress.first_name,
+    shippingAddress.last_name,
+    shippingAddress.address1,
+    shippingAddress.city,
+    shippingAddress.province,
+    shippingAddress.country,
+    shippingAddress.zip
+  ].filter(Boolean); // Remove empty/undefined values
+  
+  return parts.join(', ');
+}
+
 exports.createShopifyOrder = async (req, res, next) => {
   try {
     const shopifyOrder = req.body;
@@ -469,19 +487,26 @@ exports.createShopifyOrder = async (req, res, next) => {
       'cancelled': 'cancelled'
     };
 
+    // Transform shipping address data
+    const shippingDetails = shopifyOrder.shipping_address ? {
+      status: 'not_shipped',
+      shipping_address: formatShippingAddress(shopifyOrder.shipping_address)
+    } : null;
+
     // Transform order data
     const transformedOrder = {
       order_date: new Date(shopifyOrder.created_at).toISOString().split('T')[0],
-      status: statusMap[shopifyOrder.fulfillment_status] || 'pending',
+      status: statusMap[shopifyOrder.fulfillment_status] || 'new',
       total_price: parseFloat(shopifyOrder.total_price) || 0,
       order_number: parseInt(shopifyOrder.order_number),
       customer_details: customerData,
       order_details: shopifyOrder.line_items.map(item => ({
         product_id: null,  // Will be set by service layer
-        status: 'pending',
+        status: 'new',
         quantity: item.quantity,
         title: item.title  // Temporary field to help find matching product
-      }))
+      })),
+      shipping_details: shippingDetails
     };
 
     const currentUserId = req.user?.id;

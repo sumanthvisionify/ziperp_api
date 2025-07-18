@@ -3,11 +3,24 @@ const supabase = require('../../config/supabaseClient');
 // Helper function to log activity
 async function logActivity(userId, action, customerId = null, moduleName = 'Customers') {
   try {
+    // Get user information
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .eq('id', userId)
+      .single();
+      
+    if (userError) throw userError;
+
     await supabase.from('activity_log').insert([{
-      user_id: userId,
-      customer_id: customerId,
-      action,
-      module_name: moduleName
+      module_name: moduleName,
+      record_id: customerId,
+      change_log: action,
+      performed_by: {
+        user_id: user.id,
+        user_name: user.name,
+        email: user.email
+      }
     }]);
   } catch (error) {
     console.error('Error logging activity:', error);
