@@ -106,7 +106,8 @@ async function findOrCreateProduct(productData) {
         name: productData.title,
         description: `Product imported from Shopify`,
         base_unit: 'piece',
-        is_deleted: false
+        is_deleted: false,
+        //product_quantity: productData.quantity
       }])
       .select()
       .single();
@@ -170,6 +171,7 @@ exports.processShopifyOrder = async (shopifyOrder) => {
 
       const processedItem = {
         product_id: productId,
+        product_quantity: item.quantity || 1, // Map Shopify quantity to product_quantity
         status: 'pending'
       };
       
