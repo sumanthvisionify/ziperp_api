@@ -25,7 +25,9 @@ app.use(express.json({ type: 'application/json' }));
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/customers', customerRoutes);
-app.use('/webhooks', webhookRoutes);
+
+// Webhook routes - mount at root level to match Shopify URL
+app.use('/', webhookRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
