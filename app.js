@@ -1,17 +1,33 @@
 require('dotenv').config();
+
+console.log('ENV CHECK:', {
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY,
+});
+
 const express = require('express');
 const cors = require('cors');
-const userRoutes = require('./routes/userRoutes');
-const orderRoutes = require('./routes/modules/orderRoutes');
+const app = express()
 
-const app = express();
+//routes
+const userRoutes = require('./routes/userRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const customerRoutes = require('./routes/customerRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
 
 app.use(cors());
 app.use(express.json());
+app.use(express.json({ type: 'application/json' }));
+
+
 
 // API Routes
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/customers', customerRoutes);
+
+// Webhook routes - mount at root level to match Shopify URL
+app.use('/', webhookRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -27,10 +43,11 @@ app.get('/api', (req, res) => {
   res.json({
     message: 'ZipCushions ERP API',
     version: '1.0.0',
-    modules: ['Users', 'Orders', 'Make', 'Sales', 'Buy', 'Stock', 'Settings'],
+    modules: ['Users', 'Orders', 'Customers', 'Make', 'Sales', 'Buy', 'Stock', 'Settings'],
     endpoints: {
       users: '/api/users',
       orders: '/api/orders',
+      customers: '/api/customers',
       health: '/health'
     }
   });
