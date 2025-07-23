@@ -84,12 +84,37 @@ async function findOrCreateProduct(productData) {
     console.log(`Looking for product: ${productData.title}`);
     
     // Try to find product by name first since product id in shopify and in our database are different
+    console.log(`Searching for product with exact name: "${productData.title}"`);
+    
     const { data: existingProduct, error: lookupError } = await supabase
       .from('products')
       .select('id, name')
       .eq('name', productData.title)
       .eq('is_deleted', false)
       .single();
+
+    console.log('Product lookup result:', { existingProduct, lookupError });
+    
+    // If not found, try a case-insensitive search
+    if (!existingProduct && lookupError && lookupError.code === 'PGRST116') {
+      console.log(`Exact match not found, trying case-insensitive search for: "${productData.title}"`);
+      
+      const { data: caseInsensitiveProducts, error: caseError } = await supabase
+        .from('products')
+        .select('id, name')
+        .ilike('name', productData.title)
+        .eq('is_deleted', false);
+        
+      console.log('Case-insensitive lookup result:', { caseInsensitiveProducts, caseError });
+      
+      if (caseInsensitiveProducts && caseInsensitiveProducts.length > 0) {
+        // Use the first matching product
+        const firstMatch = caseInsensitiveProducts[0];
+        console.log(`Found existing product (case-insensitive): ${firstMatch.name} (ID: ${firstMatch.id})`);
+        console.log(`Total matches found: ${caseInsensitiveProducts.length}`);
+        return firstMatch.id;
+      }
+    }
 
     if (lookupError && lookupError.code !== 'PGRST116') throw lookupError;
 
@@ -162,6 +187,7 @@ exports.processShopifyOrder = async (shopifyOrder) => {
       console.log(`Processing line item ${index + 1}:`, {
         title: item.title,
         quantity: item.quantity,
+        quantity_type: typeof item.quantity,
         price: item.price
       });
       
@@ -169,9 +195,13 @@ exports.processShopifyOrder = async (shopifyOrder) => {
         title: item.title
       });
 
+      // Ensure quantity is a number and has a valid value
+      const productQuantity = parseInt(item.quantity) || 1;
+      console.log(`Converted quantity for ${item.title}: ${item.quantity} -> ${productQuantity}`);
+
       const processedItem = {
         product_id: productId,
-        product_quantity: item.quantity || 1, // Map Shopify quantity to product_quantity
+        product_quantity: productQuantity,
         status: 'pending'
       };
       
@@ -213,7 +243,11 @@ exports.processShopifyOrder = async (shopifyOrder) => {
       const { data: createdDetails, error: detailsError } = await supabase
         .from('order_details')
         .insert(orderDetailsWithOrderId)
-        .select();
+        .select('*');
+        
+      if (createdDetails) {
+        console.log('Created order details in database:', createdDetails);
+      }
         
       if (detailsError) {
         console.error('Error creating order details:', detailsError);
