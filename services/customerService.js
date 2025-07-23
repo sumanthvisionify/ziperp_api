@@ -62,7 +62,7 @@ exports.createCustomer = async (customerData, createdBy = null) => {
     
     // Log activity
     if (createdBy) {
-      await logActivity(createdBy, 'Created customer', data.id);
+      await logActivity(createdBy, `Created customer with name : ${data.name}, email : (${data.email}) with id ${data.id}`, data.id);
     }
     
     return data;
