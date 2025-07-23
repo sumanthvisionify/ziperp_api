@@ -1,4 +1,5 @@
 const supabase = require('../config/supabaseClient');
+const customerService = require('./customerService');
 
 // Helper function to format shipping address
 function formatShippingAddress(shippingAddress) {
@@ -72,6 +73,8 @@ async function getOrCreateCustomer(customerData) {
       .single();
 
     if (createError) throw createError;
+    console.log(`Created new customer: ${newCustomer.name} (ID: ${newCustomer.id}), data : ${JSON.stringify(data.id)}`);
+    //customerService.logActivity(data.id, `Created customer with name : ${newCustomer.name}, email : (${newCustomer.email}) with id ${newCustomer.id}`);
     return newCustomer;
   } catch (error) {
     throw error;
