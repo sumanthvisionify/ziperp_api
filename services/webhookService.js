@@ -73,7 +73,7 @@ async function getOrCreateCustomer(customerData) {
       .single();
 
     if (createError) throw createError;
-    console.log(`Created new customer: ${newCustomer.name} (ID: ${newCustomer.id}), data : ${JSON.stringify(data.id)}`);
+    console.log(`Created new customer: ${newCustomer.name} (ID: ${newCustomer.id})}`);
     //customerService.logActivity(data.id, `Created customer with name : ${newCustomer.name}, email : (${newCustomer.email}) with id ${newCustomer.id}`);
     return newCustomer;
   } catch (error) {
@@ -177,7 +177,7 @@ exports.processShopifyOrder = async (shopifyOrder) => {
 
     // Map fulfillment status to our status
     const statusMap = {
-      'unfulfilled': 'pending',
+      'unfulfilled': 'new',
       'fulfilled': 'completed',
       'partially_fulfilled': 'in_progress',
       'cancelled': 'cancelled'
@@ -191,7 +191,9 @@ exports.processShopifyOrder = async (shopifyOrder) => {
         title: item.title,
         quantity: item.quantity,
         quantity_type: typeof item.quantity,
-        price: item.price
+        price: item.price,
+        total_discount: item.total_discount,
+        properties: item.properties
       });
       
       const productId = await findOrCreateProduct({
@@ -202,9 +204,26 @@ exports.processShopifyOrder = async (shopifyOrder) => {
       const productQuantity = parseInt(item.quantity) || 1;
       console.log(`Converted quantity for ${item.title}: ${item.quantity} -> ${productQuantity}`);
 
+      // Extract product properties from Shopify line item
+      const productProperties = item.properties ? item.properties.reduce((acc, prop) => {
+        acc[prop.name] = prop.value;
+        return acc;
+      }, {}) : {};
+
+      // Calculate price per unit (total price / quantity)
+      const totalPrice = item.price ? parseFloat(item.price) : 0;
+      const pricePerUnit = productQuantity > 0 ? totalPrice / productQuantity : totalPrice;
+      console.log(`Price calculation for ${item.title}: Total=${totalPrice}, Quantity=${productQuantity}, Price per unit=${pricePerUnit}`);
+
+      // Extract discount amount
+      const discount = item.total_discount ? parseFloat(item.total_discount) : 0;
+
       const processedItem = {
         product_id: productId,
         product_quantity: productQuantity,
+        product_properties: productProperties,
+        price_per_unit: pricePerUnit,
+        discount: discount,
         status: 'pending'
       };
       
@@ -219,7 +238,7 @@ exports.processShopifyOrder = async (shopifyOrder) => {
       .from('orders')
       .insert([{
         order_date: new Date(shopifyOrder.created_at).toISOString().split('T')[0],
-        status: isCancelled ? 'cancelled' : (statusMap[shopifyOrder.fulfillment_status] || 'pending'),
+        status: isCancelled ? 'cancelled' : (statusMap[shopifyOrder.fulfillment_status] || 'new'),
         total_price: parseFloat(shopifyOrder.total_price) || 0,
         order_number: parseInt(shopifyOrder.order_number),
         customer_id: customer.id,
@@ -237,7 +256,7 @@ exports.processShopifyOrder = async (shopifyOrder) => {
         order_id: order.id,
         factory_id: null, // Will be set later if needed
         company_id: null, // Will be set later if needed
-        status: isCancelled ? 'cancelled' : (statusMap[shopifyOrder.fulfillment_status] || 'pending'),
+        status: isCancelled ? 'cancelled' : (statusMap[shopifyOrder.fulfillment_status] || 'new'),
         is_deleted: isCancelled ? true : false
       }));
       
@@ -292,7 +311,7 @@ exports.processShopifyOrder = async (shopifyOrder) => {
       order_number: shopifyOrder.order_number,
       customer_id: customer.id,
       shipping_details_id: shippingDetailsId,
-      status: isCancelled ? 'cancelled' : 'created'
+      status: isCancelled ? 'cancelled' : 'new'
     };
 
   } catch (error) {
@@ -317,7 +336,7 @@ exports.updateShopifyOrder = async (shopifyOrder) => {
 
     // Map fulfillment status to our status
     const statusMap = {
-      'unfulfilled': 'pending',
+      'unfulfilled': 'new',
       'fulfilled': 'completed',
       'partially_fulfilled': 'in_progress',
       'cancelled': 'cancelled'
