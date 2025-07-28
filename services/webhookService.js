@@ -5,19 +5,48 @@ const customerService = require('./customerService');
 function formatShippingAddress(shippingAddress) {
   if (!shippingAddress) return null;
   
-  const parts = [
-    shippingAddress.first_name,
-    shippingAddress.last_name,
-    shippingAddress.company,
-    shippingAddress.address1,
-    shippingAddress.address2,
+  // Create a more structured address format
+  const addressParts = [];
+  
+  // Add name
+  if (shippingAddress.first_name || shippingAddress.last_name) {
+    addressParts.push(`${shippingAddress.first_name || ''} ${shippingAddress.last_name || ''}`.trim());
+  }
+  
+  // Add company if available
+  if (shippingAddress.company) {
+    addressParts.push(shippingAddress.company);
+  }
+  
+  // Add address lines
+  if (shippingAddress.address1) {
+    addressParts.push(shippingAddress.address1);
+  }
+  if (shippingAddress.address2) {
+    addressParts.push(shippingAddress.address2);
+  }
+  
+  // Add city, state, zip, country
+  const cityStateZip = [
     shippingAddress.city,
     shippingAddress.province,
-    shippingAddress.country,
     shippingAddress.zip
-  ].filter(Boolean); // Remove empty/undefined values
+  ].filter(Boolean).join(', ');
   
-  return parts.join(', ');
+  if (cityStateZip) {
+    addressParts.push(cityStateZip);
+  }
+  
+  if (shippingAddress.country) {
+    addressParts.push(shippingAddress.country);
+  }
+  
+  // Add phone if available
+  if (shippingAddress.phone) {
+    addressParts.push(`Phone: ${shippingAddress.phone}`);
+  }
+  
+  return addressParts.join('\n');
 }
 
 // Helper function to format customer address
@@ -146,6 +175,31 @@ async function findOrCreateProduct(productData) {
     }
     
     console.log(`Created new product: ${newProduct.name} (ID: ${newProduct.id})`);
+    
+    // Create stock entry for the new product
+    console.log(`Creating stock entry for new product: ${newProduct.name} (Product ID: ${newProduct.id})`);
+    const { data: stockEntry, error: stockError } = await supabase
+      .from('stock')
+      .insert([{
+        product_id: newProduct.id,
+        item_id: null, // Products don't have item_id
+        factory_id: null, // Will be set later when assigned to a factory
+        item_type: 'product', // For products (vs 'item' for items)
+        available_quantity: 0, // Start with 0 stock
+        expected_quantity: 0, // Start with 0 expected
+        status: 'in_stock'
+      }])
+      .select()
+      .single();
+
+    if (stockError) {
+      console.error('Error creating stock entry:', stockError);
+      // Don't throw error here, just log it - the product was created successfully
+      console.log('Product created but stock entry failed - this can be fixed manually');
+    } else {
+      console.log(`Created stock entry for product: ${newProduct.name} (Stock ID: ${stockEntry.id})`);
+    }
+    
     return newProduct.id;
   } catch (error) {
     console.error('Error in findOrCreateProduct:', error);
@@ -215,15 +269,11 @@ exports.processShopifyOrder = async (shopifyOrder) => {
       const pricePerUnit = productQuantity > 0 ? totalPrice / productQuantity : totalPrice;
       console.log(`Price calculation for ${item.title}: Total=${totalPrice}, Quantity=${productQuantity}, Price per unit=${pricePerUnit}`);
 
-      // Extract discount amount
-      const discount = item.total_discount ? parseFloat(item.total_discount) : 0;
-
       const processedItem = {
         product_id: productId,
         product_quantity: productQuantity,
         product_properties: productProperties,
         price_per_unit: pricePerUnit,
-        discount: discount,
         status: 'pending'
       };
       
@@ -233,6 +283,18 @@ exports.processShopifyOrder = async (shopifyOrder) => {
     
     console.log('All processed line items:', processedLineItems);
 
+    // Extract total discount and tax from Shopify order
+    const totalDiscount = shopifyOrder.total_discounts ? parseFloat(shopifyOrder.total_discounts) : 0;
+    const totalTax = shopifyOrder.total_tax ? parseFloat(shopifyOrder.total_tax) : 0;
+    
+    console.log('Order totals from Shopify:', {
+      total_price: shopifyOrder.total_price,
+      total_discounts: shopifyOrder.total_discounts,
+      total_tax: shopifyOrder.total_tax,
+      parsed_discount: totalDiscount,
+      parsed_tax: totalTax
+    });
+
     // Create the main order
     const { data: order, error: orderError } = await supabase
       .from('orders')
@@ -240,6 +302,8 @@ exports.processShopifyOrder = async (shopifyOrder) => {
         order_date: new Date(shopifyOrder.created_at).toISOString().split('T')[0],
         status: isCancelled ? 'cancelled' : (statusMap[shopifyOrder.fulfillment_status] || 'new'),
         total_price: parseFloat(shopifyOrder.total_price) || 0,
+        total_discount: totalDiscount,
+        total_tax: totalTax,
         order_number: parseInt(shopifyOrder.order_number),
         customer_id: customer.id,
         is_deleted: isCancelled ? true : false
@@ -269,6 +333,12 @@ exports.processShopifyOrder = async (shopifyOrder) => {
         
       if (createdDetails) {
         console.log('Created order details in database:', createdDetails);
+      console.log('Order created with totals:', {
+        order_id: order.id,
+        total_price: order.total_price,
+        total_discount: order.total_discount,
+        total_tax: order.total_tax
+      });
       }
         
       if (detailsError) {
@@ -283,19 +353,83 @@ exports.processShopifyOrder = async (shopifyOrder) => {
 
     // Create shipping details if shipping address exists
     let shippingDetailsId = null;
-    if (shopifyOrder.shipping_address) {
+    if (shopifyOrder.shipping_address || shopifyOrder.shipping_lines) {
+      console.log('Processing shipping details from Shopify order');
+      console.log('Shipping address from Shopify:', shopifyOrder.shipping_address);
+      console.log('Shipping lines from Shopify:', shopifyOrder.shipping_lines);
+      console.log('Total shipping price set:', shopifyOrder.total_shipping_price_set);
+      console.log('Total tax:', shopifyOrder.total_tax);
+      
+      // Extract shipping information from Shopify payload
+      const shippingInfo = {
+        order_id: order.id,
+        status: isCancelled ? 'cancelled' : 'not_shipped',
+        shipping_address: shopifyOrder.shipping_address ? formatShippingAddress(shopifyOrder.shipping_address) : null,
+        shipping_method: null,
+        notes: null,
+        carrier: null,
+        shipping_cost: 0.00,
+        tracking_number: null
+      };
+
+      // Extract shipping method and carrier from shipping_lines
+      if (shopifyOrder.shipping_lines && shopifyOrder.shipping_lines.length > 0) {
+        const shippingLine = shopifyOrder.shipping_lines[0]; // Take the first shipping line
+        shippingInfo.shipping_method = shippingLine.title || null;
+        
+        // Try to extract carrier from code or title
+        if (shippingLine.code) {
+          // Extract carrier from code like "Standard Shipping for Fabric Samples_1"
+          const codeParts = shippingLine.code.split(' for ');
+          if (codeParts.length > 0) {
+            shippingInfo.carrier = codeParts[0] || null;
+          }
+        }
+      }
+
+      // Extract shipping cost from total_shipping_price_set
+      if (shopifyOrder.total_shipping_price_set && shopifyOrder.total_shipping_price_set.shop_money) {
+        shippingInfo.shipping_cost = parseFloat(shopifyOrder.total_shipping_price_set.shop_money.amount) || 0.00;
+        console.log('Extracted shipping cost from total_shipping_price_set:', shippingInfo.shipping_cost);
+        console.log('Raw shipping price data:', shopifyOrder.total_shipping_price_set.shop_money);
+      } else if (shopifyOrder.total_shipping_price) {
+        // Fallback to total_shipping_price if available
+        shippingInfo.shipping_cost = parseFloat(shopifyOrder.total_shipping_price) || 0.00;
+        console.log('Extracted shipping cost from total_shipping_price:', shippingInfo.shipping_cost);
+      } else {
+        shippingInfo.shipping_cost = 0.00;
+        console.log('No shipping cost found, defaulting to 0.00');
+      }
+
+      // Log tax information for reference
+      if (shopifyOrder.total_tax) {
+        const taxAmount = parseFloat(shopifyOrder.total_tax);
+        console.log('Total order tax from Shopify:', taxAmount);
+      }
+      
+      console.log('Extracted shipping info:', {
+        method: shippingInfo.shipping_method,
+        cost: shippingInfo.shipping_cost,
+        carrier: shippingInfo.carrier,
+        notes: shippingInfo.notes
+      });
+
+      // Add order notes if available
+      if (shopifyOrder.note) {
+        shippingInfo.notes = shopifyOrder.note;
+      }
+
+      console.log('Creating shipping details with:', shippingInfo);
+
       const { data: shippingDetails, error: shippingError } = await supabase
         .from('shipping_details')
-        .insert([{
-          order_id: order.id,
-          status: isCancelled ? 'cancelled' : 'not_shipped',
-          shipping_address: formatShippingAddress(shopifyOrder.shipping_address)
-        }])
+        .insert([shippingInfo])
         .select()
         .single();
         
       if (shippingError) throw shippingError;
       shippingDetailsId = shippingDetails.id;
+      console.log('Created shipping details with ID:', shippingDetailsId);
     }
 
     // Log activity
