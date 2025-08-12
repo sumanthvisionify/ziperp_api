@@ -1,340 +1,291 @@
-create table public.activity_log (
-  id uuid not null default gen_random_uuid (),
-  module_name text not null,
-  record_id text null,
-  change_log text null,
-  modified_at timestamp with time zone not null default now(),
-  modified_by jsonb not null,
-  constraint activity_log_pkey primary key (id)
-) TABLESPACE pg_default;
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
-create index IF not exists idx_activity_log_user_id on public.activity_log using btree (module_name) TABLESPACE pg_default;
-
-create index IF not exists idx_activity_log_order_id on public.activity_log using btree (record_id) TABLESPACE pg_default;
-
-create trigger trg_set_record_id BEFORE INSERT on activity_log for EACH row
-execute FUNCTION set_activity_log_record_id ();
-
-create table public.companies (
-  id uuid not null default gen_random_uuid (),
-  factory_id uuid null,
-  name character varying(255) not null,
-  phone character varying(50) null,
-  address text null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  constraint companies_pkey primary key (id),
-  constraint fk_companies_factory foreign KEY (factory_id) references factories (id) on delete set null
-) TABLESPACE pg_default;
-
-create trigger update_companies_updated_at BEFORE
-update on companies for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.customers (
-  id uuid not null default gen_random_uuid (),
-  name character varying(255) not null,
-  address text null,
-  phone character varying(50) null,
-  email character varying(255) null,
-  status character varying(50) null default 'active'::character varying,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  constraint customers_pkey primary key (id)
-) TABLESPACE pg_default;
-
-create trigger update_customers_updated_at BEFORE
-update on customers for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.factories (
-  id uuid not null default gen_random_uuid (),
-  company_id uuid null,
-  location character varying(255) null,
-  address text null,
-  phone character varying(50) null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  constraint factories_pkey primary key (id),
-  constraint fk_factories_company foreign KEY (company_id) references companies (id) on delete set null
-) TABLESPACE pg_default;
-
-create trigger update_factories_updated_at BEFORE
-update on factories for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.items (
-  id uuid not null default gen_random_uuid (),
-  name character varying(255) not null,
-  availability boolean null default true,
-  factory_id uuid null,
-  company_id uuid null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  constraint items_pkey primary key (id),
-  constraint items_company_id_fkey foreign KEY (company_id) references companies (id) on delete set null,
-  constraint items_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null
-) TABLESPACE pg_default;
-
-create trigger update_items_updated_at BEFORE
-update on items for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.order_detail_ingredients (
-  id uuid not null default gen_random_uuid (),
-  order_details_id uuid null,
-  order_id uuid null,
-  item_id uuid null,
-  quantity numeric(15, 2) not null,
-  status character varying(50) null default 'pending'::character varying,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  factory_id uuid null,
-  company_id uuid null,
-  constraint order_detail_ingredients_pkey primary key (id),
-  constraint order_detail_ingredients_company_id_fkey foreign KEY (company_id) references companies (id) on delete set null,
-  constraint order_detail_ingredients_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null,
-  constraint order_detail_ingredients_item_id_fkey foreign KEY (item_id) references items (id) on delete set null,
-  constraint order_detail_ingredients_order_details_id_fkey foreign KEY (order_details_id) references order_details (id) on delete CASCADE,
-  constraint order_detail_ingredients_order_id_fkey foreign KEY (order_id) references orders (id) on delete CASCADE
-) TABLESPACE pg_default;
-
-create trigger update_order_detail_ingredients_updated_at BEFORE
-update on order_detail_ingredients for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.order_details (
-  id uuid not null default gen_random_uuid (),
-  order_id uuid null,
-  product_id uuid null,
-  status character varying(50) null default 'pending'::character varying,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  factory_id uuid null,
-  company_id uuid null,
-  product_quantity bigint not null default '1'::bigint,
-  constraint order_details_pkey primary key (id),
-  constraint order_details_company_id_fkey foreign KEY (company_id) references companies (id) on delete set null,
-  constraint order_details_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null,
-  constraint order_details_order_id_fkey foreign KEY (order_id) references orders (id) on delete CASCADE,
-  constraint order_details_product_id_fkey foreign KEY (product_id) references products (id) on update CASCADE on delete set null
-) TABLESPACE pg_default;
-
-create trigger update_order_details_updated_at BEFORE
-update on order_details for EACH row
-execute FUNCTION update_updated_at_column ();
-
-
-create table public.orders (
-  id uuid not null default gen_random_uuid (),
-  customer_id uuid null,
-  order_date date not null,
-  status character varying(50) null default 'pending'::character varying,
-  is_deleted boolean null default false,
-  company_id uuid null,
-  factory_id uuid null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  total_price numeric null default '1200'::numeric,
-  order_number bigint null,
-  expected_date date null,
-  constraint orders_pkey primary key (id),
-  constraint orders_company_id_fkey foreign KEY (company_id) references companies (id) on delete set null,
-  constraint orders_customer_id_fkey foreign KEY (customer_id) references customers (id) on delete set null,
-  constraint orders_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null
-) TABLESPACE pg_default;
-
-create trigger trigger_set_expected_date BEFORE INSERT
-or
-update OF order_date on orders for EACH row
-execute FUNCTION set_expected_date ();
-
-create trigger update_orders_updated_at BEFORE
-update on orders for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.permissions (
-  id uuid not null default gen_random_uuid (),
-  module_name character varying(100) not null,
-  can_read boolean null default false,
-  can_write boolean null default false,
-  can_delete boolean null default false,
-  can_manage_users boolean null default false,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  constraint permissions_pkey primary key (id)
-) TABLESPACE pg_default;
-
-create trigger update_permissions_updated_at BEFORE
-update on permissions for EACH row
-execute FUNCTION update_updated_at_column ();
-
-create table public.products (
-  id uuid not null default gen_random_uuid (),
-  name character varying(255) not null,
-  description text null,
-  base_unit character varying(50) null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  tax_rate numeric not null default 15.00,
-  constraint products_pkey primary key (id),
-  constraint products_tax_rate_check check ((tax_rate >= (0)::numeric))
-) TABLESPACE pg_default;
-
-create trigger update_products_updated_at BEFORE
-update on products for EACH row
-execute FUNCTION update_updated_at_column ();create table public.purchase_orders (
-  id text not null default generate_purchase_order_id (),
-  supplier_id uuid null,
-  created_at timestamp with time zone null default now(),
-  expected_at date null,
-  status text null default 'pending'::text,
-  order_cost numeric(12, 2) null default 0,
-  invoice_number text null,
-  item_id uuid null,
-  quantity bigint null default '0'::bigint,
-  constraint purchase_orders_pkey primary key (id),
-  constraint purchase_orders_item_id_fkey foreign KEY (item_id) references items (id) on update CASCADE on delete CASCADE,
-  constraint purchase_orders_supplier_id_fkey foreign KEY (supplier_id) references suppliers (id),
-  constraint purchase_orders_quantity_check check ((quantity >= 0))
-) TABLESPACE pg_default;
-
-create table public.role_permissions (
-  role_id uuid not null,
-  permission_id uuid not null,
-  created_at timestamp with time zone null default now(),
-  constraint role_permissions_pkey primary key (role_id, permission_id),
-  constraint role_permissions_permission_id_fkey foreign KEY (permission_id) references permissions (id) on delete CASCADE,
-  constraint role_permissions_role_id_fkey foreign KEY (role_id) references roles (id) on delete CASCADE
-) TABLESPACE pg_default;
-
-create table public.roles (
-  id uuid not null default gen_random_uuid (),
-  role_name character varying(100) not null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  constraint roles_pkey primary key (id),
-  constraint roles_role_name_key unique (role_name)
-) TABLESPACE pg_default;
-
-create trigger update_roles_updated_at BEFORE
-update on roles for EACH row
-execute FUNCTION update_updated_at_column ();
-
--- Add shipping_details table
-create table public.shipping_details (
-  id uuid not null default gen_random_uuid (),
-  order_id uuid not null,
-  status text not null default 'not_shipped'::text,
-  shipped_date date null,
-  shipping_address text null,
-  constraint shipping_details_pkey primary key (id),
-  constraint shipping_details_order_id_fkey foreign KEY (order_id) references orders (id) on update CASCADE on delete CASCADE
-) TABLESPACE pg_default;
-
--- Create index on order_id for better performance
-create index IF not exists idx_shipping_details_order_id on public.shipping_details using btree (order_id) TABLESPACE pg_default;
-
--- Create index on status for filtering
-create index IF not exists idx_shipping_details_status on public.shipping_details using btree (status) TABLESPACE pg_default;
-
--- Grant permissions
-GRANT ALL ON public.shipping_details TO postgres;
-GRANT ALL ON public.shipping_details TO service_role;
-GRANT ALL ON public.shipping_details TO authenticated;
-
--- Disable RLS for shipping_details table
-ALTER TABLE public.shipping_details DISABLE ROW LEVEL SECURITY; 
-
-
-create table public.stock (
-  id uuid not null default gen_random_uuid (),
-  item_id uuid null,
-  factory_id uuid null,
-  item_type public.item_type_enum not null,
-  available_quantity numeric(15, 2) null default 0,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  product_id uuid null,
-  status text null default 'in_stock'::text,
-  expected_quantity numeric(15, 2) null default 0,
-  constraint stock_pkey primary key (id),
-  constraint stock_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null,
-  constraint stock_item_id_fkey foreign KEY (item_id) references items (id) on delete CASCADE,
-  constraint stock_product_id_fkey foreign KEY (product_id) references products (id) on delete CASCADE,
-  constraint only_one_reference check (
-    (
-      (
-        (item_id is not null)
-        and (product_id is null)
-      )
-      or (
-        (item_id is null)
-        and (product_id is not null)
-      )
-    )
-  )
-) TABLESPACE pg_default;
-
-create index IF not exists idx_stock_product_id on public.stock using btree (product_id) TABLESPACE pg_default;
-
-create index IF not exists idx_stock_item_id on public.stock using btree (item_id) TABLESPACE pg_default;
-
-create index IF not exists idx_stock_factory_id on public.stock using btree (factory_id) TABLESPACE pg_default;
-
-create trigger update_stock_updated_at BEFORE
-update on stock for EACH row
-execute FUNCTION update_updated_at_column ();
-
-
-
-create table public.suppliers (
-  id uuid not null default gen_random_uuid (),
-  name text not null,
-  email text not null,
-  phone text null,
-  is_deleted boolean null default false,
-  created_at timestamp with time zone null default CURRENT_TIMESTAMP,
-  updated_at timestamp with time zone null default CURRENT_TIMESTAMP,
-  status text null default 'active'::text,
-  constraint suppliers_pkey primary key (id),
-  constraint suppliers_email_key unique (email),
-  constraint suppliers_status_check check (
-    (
-      status = any (array['active'::text, 'inactive'::text])
-    )
-  )
-) TABLESPACE pg_default;
-
-create table public.users (
-  id uuid not null default gen_random_uuid (),
-  name character varying(255) not null,
-  email character varying(255) not null,
-  password_hash character varying(255) not null,
-  role_id uuid null,
-  factory_id uuid null,
-  created_at timestamp with time zone null default now(),
-  updated_at timestamp with time zone null default now(),
-  is_deleted boolean null default false,
-  constraint users_pkey primary key (id),
-  constraint users_email_key unique (email),
-  constraint users_factory_id_fkey foreign KEY (factory_id) references factories (id) on delete set null,
-  constraint users_role_id_fkey foreign KEY (role_id) references roles (id) on delete set null
-) TABLESPACE pg_default;
-
-create index IF not exists idx_users_email on public.users using btree (email) TABLESPACE pg_default;
-
-create index IF not exists idx_users_role_id on public.users using btree (role_id) TABLESPACE pg_default;
-
-create index IF not exists idx_users_factory_id on public.users using btree (factory_id) TABLESPACE pg_default;
-
+CREATE TABLE public.activity_log (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  module_name text NOT NULL,
+  record_id text,
+  change_log text,
+  modified_at timestamp with time zone NOT NULL DEFAULT now(),
+  modified_by jsonb NOT NULL,
+  from_module character varying,
+  to_module character varying,
+  CONSTRAINT activity_log_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.companies (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  factory_id uuid,
+  name character varying NOT NULL,
+  phone character varying,
+  address text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  CONSTRAINT companies_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.customers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying NOT NULL,
+  address text,
+  phone character varying,
+  email character varying,
+  status character varying DEFAULT 'active'::character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  CONSTRAINT customers_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.factories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid,
+  location character varying,
+  address text,
+  phone character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  CONSTRAINT factories_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_factories_company FOREIGN KEY (company_id) REFERENCES public.companies(id)
+);
+CREATE TABLE public.items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying NOT NULL,
+  availability boolean DEFAULT true,
+  factory_id uuid,
+  company_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  sku character varying,
+  category character varying,
+  default_supplier character varying,
+  unit_of_measure character varying,
+  average_cost numeric,
+  value_in_stock numeric,
+  in_stock numeric,
+  expected numeric,
+  committed numeric,
+  safety_stock numeric,
+  calculated_stock numeric,
+  location character varying,
+  CONSTRAINT items_pkey PRIMARY KEY (id),
+  CONSTRAINT items_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT items_factory_id_fkey FOREIGN KEY (factory_id) REFERENCES public.factories(id)
+);
+CREATE TABLE public.order_detail_ingredients (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_details_id uuid,
+  order_id uuid,
+  item_id uuid,
+  quantity numeric NOT NULL,
+  status character varying DEFAULT 'pending'::character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  factory_id uuid,
+  company_id uuid,
+  CONSTRAINT order_detail_ingredients_pkey PRIMARY KEY (id),
+  CONSTRAINT order_detail_ingredients_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id),
+  CONSTRAINT order_detail_ingredients_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT order_detail_ingredients_factory_id_fkey FOREIGN KEY (factory_id) REFERENCES public.factories(id),
+  CONSTRAINT order_detail_ingredients_order_details_id_fkey FOREIGN KEY (order_details_id) REFERENCES public.order_details(id),
+  CONSTRAINT order_detail_ingredients_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)
+);
+CREATE TABLE public.order_details (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_id uuid,
+  product_id uuid,
+  status character varying DEFAULT 'pending'::character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  factory_id uuid,
+  company_id uuid,
+  product_quantity bigint NOT NULL DEFAULT 1,
+  product_properties jsonb DEFAULT '{}'::jsonb,
+  price_per_unit numeric,
+  total_tax numeric DEFAULT 0.00,
+  line_no integer,
+  order_details_number text,
+  CONSTRAINT order_details_pkey PRIMARY KEY (id),
+  CONSTRAINT order_details_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT order_details_factory_id_fkey FOREIGN KEY (factory_id) REFERENCES public.factories(id),
+  CONSTRAINT order_details_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id),
+  CONSTRAINT order_details_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+CREATE TABLE public.orders (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  customer_id uuid,
+  order_date date NOT NULL,
+  status character varying DEFAULT 'pending'::character varying,
+  is_deleted boolean DEFAULT false,
+  company_id uuid,
+  factory_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  total_price numeric DEFAULT 1200,
+  order_number bigint,
+  expected_date date,
+  total_discount numeric DEFAULT 0.00,
+  total_tax numeric DEFAULT 0.00,
+  CONSTRAINT orders_pkey PRIMARY KEY (id),
+  CONSTRAINT orders_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),
+  CONSTRAINT orders_factory_id_fkey FOREIGN KEY (factory_id) REFERENCES public.factories(id)
+);
+CREATE TABLE public.permissions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  module_name character varying NOT NULL,
+  can_read boolean DEFAULT false,
+  can_write boolean DEFAULT false,
+  can_delete boolean DEFAULT false,
+  can_manage_users boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT permissions_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.products (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying NOT NULL,
+  description text,
+  base_unit character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  tax_rate numeric NOT NULL DEFAULT 15.00 CHECK (tax_rate >= 0::numeric),
+  sku character varying,
+  category character varying,
+  default_supplier character varying,
+  unit_of_measure character varying,
+  average_cost numeric,
+  value_in_stock numeric,
+  in_stock numeric,
+  expected numeric,
+  committed numeric,
+  safety_stock numeric,
+  calculated_stock numeric,
+  location character varying,
+  CONSTRAINT products_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.purchase_orders (
+  id text NOT NULL DEFAULT generate_purchase_order_id(),
+  supplier_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  expected_at date,
+  status text DEFAULT 'pending'::text,
+  order_cost numeric DEFAULT 0,
+  invoice_number text,
+  item_id uuid,
+  quantity bigint DEFAULT 0 CHECK (quantity >= 0),
+  CONSTRAINT purchase_orders_pkey PRIMARY KEY (id),
+  CONSTRAINT purchase_orders_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id),
+  CONSTRAINT purchase_orders_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id)
+);
+CREATE TABLE public.role_permissions (
+  role_id uuid NOT NULL,
+  permission_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT role_permissions_pkey PRIMARY KEY (role_id, permission_id),
+  CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id),
+  CONSTRAINT role_permissions_permission_id_fkey FOREIGN KEY (permission_id) REFERENCES public.permissions(id)
+);
+CREATE TABLE public.roles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  role_name character varying NOT NULL UNIQUE,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT roles_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.shipping_details (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  order_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  status text NOT NULL DEFAULT 'not_shipped'::text,
+  shipped_date date,
+  shipping_address text,
+  shipping_method text,
+  notes text,
+  carrier text,
+  shipping_cost numeric DEFAULT 0.00,
+  tracking_number text,
+  CONSTRAINT shipping_details_pkey PRIMARY KEY (id),
+  CONSTRAINT shipping_details_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id)
+);
+CREATE TABLE public.stock (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  item_id uuid,
+  factory_id uuid,
+  item_type text NOT NULL,
+  available_quantity numeric DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  product_id uuid,
+  status text DEFAULT 'in_stock'::text,
+  expected_quantity numeric DEFAULT 0,
+  sku character varying,
+  category character varying,
+  default_supplier character varying,
+  unit_of_measure character varying,
+  average_cost numeric,
+  value_in_stock numeric,
+  in_stock numeric,
+  expected numeric,
+  committed numeric,
+  safety_stock numeric,
+  calculated_stock numeric,
+  location character varying,
+  CONSTRAINT stock_pkey PRIMARY KEY (id),
+  CONSTRAINT stock_factory_id_fkey FOREIGN KEY (factory_id) REFERENCES public.factories(id),
+  CONSTRAINT stock_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
+  CONSTRAINT stock_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.items(id)
+);
+CREATE TABLE public.stock_movements (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  stock_id uuid NOT NULL,
+  movement_type text NOT NULL CHECK (movement_type = ANY (ARRAY['in'::text, 'out'::text, 'adjustment'::text])),
+  quantity_change numeric NOT NULL,
+  cost_per_unit numeric,
+  balance_after numeric,
+  value_in_stock_after numeric,
+  average_cost_after numeric,
+  reference_type text,
+  reference_id text,
+  company_id uuid,
+  factory_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  created_by uuid,
+  remarks text,
+  CONSTRAINT stock_movements_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_stock_movements_factory FOREIGN KEY (factory_id) REFERENCES public.factories(id),
+  CONSTRAINT fk_stock_movements_company FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT fk_stock_movements_stock FOREIGN KEY (stock_id) REFERENCES public.stock(id)
+);
+CREATE TABLE public.suppliers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  email text NOT NULL UNIQUE,
+  phone text,
+  is_deleted boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  status text DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text])),
+  lead_time bigint DEFAULT 4,
+  CONSTRAINT suppliers_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.users (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying NOT NULL,
+  email character varying NOT NULL UNIQUE,
+  password_hash character varying NOT NULL,
+  role_id uuid,
+  factory_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  is_deleted boolean DEFAULT false,
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id),
+  CONSTRAINT users_factory_id_fkey FOREIGN KEY (factory_id) REFERENCES public.factories(id)
+);
 create trigger update_users_updated_at BEFORE
 update on users for EACH row
 execute FUNCTION update_updated_at_column ();

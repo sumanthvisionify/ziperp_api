@@ -111,7 +111,7 @@ async function getOrCreateCustomer(customerData) {
 }
 
 // Helper function to find or create product
-async function findOrCreateProduct(productData) {
+async function findOrCreateProduct(productData, sku) {
   try {
     console.log(`Looking for product: ${productData.title}`);
     
@@ -318,8 +318,8 @@ exports.processShopifyOrder = async (shopifyOrder) => {
       const orderDetailsWithOrderId = processedLineItems.map(detail => ({
         ...detail,
         order_id: order.id,
-        factory_id: null, // Will be set later if needed
-        company_id: null, // Will be set later if needed
+        factory_id: null,
+        company_id: null,
         status: isCancelled ? 'cancelled' : (statusMap[shopifyOrder.fulfillment_status] || 'new'),
         is_deleted: isCancelled ? true : false
       }));

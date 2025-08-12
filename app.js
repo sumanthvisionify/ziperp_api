@@ -14,20 +14,27 @@ const userRoutes = require('./routes/userRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
+const shipmentRoutes = require('./routes/shipmentRoutes');
+const fabricInvoiceRoutes = require('./routes/fabricInvoiceRoutes')
 
 app.use(cors());
 app.use(express.json());
 app.use(express.json({ type: 'application/json' }));
 
 
-
-// API Routes
+// API endpoints
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/customers', customerRoutes);
 
 // Webhook routes - mount at root level to match Shopify URL
 app.use('/', webhookRoutes);
+
+// Shipment endpoint
+app.use('/api/shipment', shipmentRoutes);
+
+// Fabric invoice endpoint
+app.use('/api/fabric-invoice', fabricInvoiceRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -48,7 +55,8 @@ app.get('/api', (req, res) => {
       users: '/api/users',
       orders: '/api/orders',
       customers: '/api/customers',
-      health: '/health'
+      health: '/health',
+      fabricInvoice: '/api/fabric-invoice'
     }
   });
 });
