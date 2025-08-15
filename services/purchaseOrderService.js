@@ -1,4 +1,4 @@
-const supabase = require('../../config/supabaseClient');
+const supabase = require('../config/supabaseClient');
 
 // Helper function to log activity
 async function logActivity(userId, action, purchaseOrderId = null, moduleName = 'Purchase Orders') {

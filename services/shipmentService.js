@@ -4,7 +4,8 @@ function extractProperties(productProperties) {
   const propertyObject = {
     length: [],
     width: [],
-    thickness: []
+    thickness: [],
+    weight: []
   };
 
   Object.entries(productProperties || {}).forEach(([key, value]) => {
@@ -21,6 +22,10 @@ function extractProperties(productProperties) {
     else if(k.includes('thickness') || k.includes('height'))
     {
         propertyObject.thickness.push(value);
+    }
+    else if(k.includes('weight'))
+    {
+        propertyObject.weight.push(value);
     }
   });
   return propertyObject;
